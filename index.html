@@ -349,6 +349,46 @@ data.emailConfig = {
 };
 function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
 
+// ===== MIGRATION: 旧フォーマット → sessions形式 =====
+function migrateRecord(rec){
+  if(rec.sessions) return rec; // 既に新形式
+  const session = {
+    clockIn:    rec.clockIn    || null,
+    clockInTs:  rec.clockInTs  || null,
+    breaks:     rec.breaks     || [],
+    clockOut:   rec.clockOut   || null,
+    clockOutTs: rec.clockOutTs || null,
+  };
+  rec.sessions = (rec.clockIn || rec.clockInTs) ? [session] : [];
+  delete rec.clockIn; delete rec.clockInTs;
+  delete rec.breaks;
+  delete rec.clockOut; delete rec.clockOutTs;
+  return rec;
+}
+for(const uid in data.records){
+  data.records[uid] = (data.records[uid]||[]).map(migrateRecord);
+}
+save();
+
+// 最新（=最後）のセッションを取得
+function lastSession(rec){
+  if(!rec || !rec.sessions || !rec.sessions.length) return null;
+  return rec.sessions[rec.sessions.length-1];
+}
+// 最初の出勤・最後の退勤（サマリー表示用）
+function firstClockIn(rec){
+  if(!rec || !rec.sessions) return null;
+  for(const s of rec.sessions){ if(s.clockIn) return s.clockIn; }
+  return null;
+}
+function lastClockOut(rec){
+  if(!rec || !rec.sessions) return null;
+  for(let i=rec.sessions.length-1; i>=0; i--){
+    if(rec.sessions[i].clockOut) return rec.sessions[i].clockOut;
+  }
+  return null;
+}
+
 // ===== STATE =====
 let currentUser = null;
 let pinInput = "";
@@ -365,10 +405,10 @@ const STATUS_CONFIG = {
   done:    { label:"退勤済", color:"#818cf8", bg:"rgba(129,140,248,.15)", border:"rgba(129,140,248,.3)" },
 };
 const BTNS_CFG = {
-  clockIn:  { allowedFrom:["idle"],    color:"#10b981", border:"rgba(16,185,129,.4)",  bg:"rgba(16,185,129,.1)" },
-  breakIn:  { allowedFrom:["working"], color:"#f59e0b", border:"rgba(245,158,11,.4)",  bg:"rgba(245,158,11,.1)" },
-  breakOut: { allowedFrom:["break"],   color:"#3b82f6", border:"rgba(59,130,246,.4)",  bg:"rgba(59,130,246,.1)" },
-  clockOut: { allowedFrom:["working"], color:"#ef4444", border:"rgba(239,68,68,.4)",   bg:"rgba(239,68,68,.1)" },
+  clockIn:  { allowedFrom:["idle","done"], color:"#10b981", border:"rgba(16,185,129,.4)",  bg:"rgba(16,185,129,.1)" },
+  breakIn:  { allowedFrom:["working"],     color:"#f59e0b", border:"rgba(245,158,11,.4)",  bg:"rgba(245,158,11,.1)" },
+  breakOut: { allowedFrom:["break"],       color:"#3b82f6", border:"rgba(59,130,246,.4)",  bg:"rgba(59,130,246,.1)" },
+  clockOut: { allowedFrom:["working"],     color:"#ef4444", border:"rgba(239,68,68,.4)",   bg:"rgba(239,68,68,.1)" },
 };
 const ACTION_LABELS = { clockIn:"出勤", breakIn:"休憩イン", breakOut:"休憩アウト", clockOut:"退勤" };
 
@@ -383,9 +423,16 @@ function fmtDuration(ms){
   return h+"時間"+String(m).padStart(2,"0")+"分";
 }
 function calcWorkTime(rec){
-  if(!rec?.clockInTs||!rec?.clockOutTs) return null;
-  const brk=rec.breaks.reduce((a,b)=>b.outTs?a+(b.outTs-b.inTs):a,0);
-  return rec.clockOutTs-rec.clockInTs-brk;
+  if(!rec?.sessions?.length) return null;
+  let total=0, hasCompleted=false;
+  for(const s of rec.sessions){
+    if(s.clockInTs && s.clockOutTs){
+      const brk=(s.breaks||[]).reduce((a,b)=>b.outTs?a+(b.outTs-b.inTs):a,0);
+      total += s.clockOutTs - s.clockInTs - brk;
+      hasCompleted = true;
+    }
+  }
+  return hasCompleted ? total : null;
 }
 function getUserStatus(uid){
   const r=(data.records[uid]||[]).find(r=>r.date===todayStr());
@@ -468,16 +515,42 @@ function handleAction(id){
   let rec=recs.find(r=>r.date===today);
   if(!rec){
     if(id!=="clockIn") return;
-    rec={date:today,status:"idle",clockIn:null,clockInTs:null,breaks:[],clockOut:null,clockOutTs:null};
+    rec={date:today, status:"idle", sessions:[]};
     recs.push(rec);
   }
-  if(id==="clockIn")       { rec.clockIn=timeStr; rec.clockInTs=ts; rec.status="working"; }
-  else if(id==="breakIn")  { rec.breaks.push({in:timeStr,inTs:ts,out:null,outTs:null}); rec.status="break"; }
-  else if(id==="breakOut") { const lb=rec.breaks[rec.breaks.length-1]; lb.out=timeStr; lb.outTs=ts; rec.status="working"; }
-  else if(id==="clockOut") { rec.clockOut=timeStr; rec.clockOutTs=ts; rec.status="done"; }
+  // 念のため旧レコードを移行
+  migrateRecord(rec);
+
+  if(id==="clockIn"){
+    // 退勤済 or 未出勤 のどちらからも新しいセッションを開始
+    rec.sessions.push({clockIn:timeStr, clockInTs:ts, breaks:[], clockOut:null, clockOutTs:null});
+    rec.status="working";
+  }
+  else if(id==="breakIn"){
+    const s=lastSession(rec);
+    if(!s) return;
+    s.breaks.push({in:timeStr, inTs:ts, out:null, outTs:null});
+    rec.status="break";
+  }
+  else if(id==="breakOut"){
+    const s=lastSession(rec);
+    if(!s) return;
+    const lb=s.breaks[s.breaks.length-1];
+    if(!lb) return;
+    lb.out=timeStr; lb.outTs=ts;
+    rec.status="working";
+  }
+  else if(id==="clockOut"){
+    const s=lastSession(rec);
+    if(!s) return;
+    s.clockOut=timeStr; s.clockOutTs=ts;
+    rec.status="done";
+  }
   save(); renderClock();
-  // メール送信
-  sendNotification(currentUser.name, ACTION_LABELS[id], timeStr, today);
+  // メール送信（再出勤の場合は "再出勤" として通知）
+  let actionLabel = ACTION_LABELS[id];
+  if(id==="clockIn" && rec.sessions.length>1) actionLabel = "再出勤";
+  sendNotification(currentUser.name, actionLabel, timeStr, today);
 }
 
 // ===== EMAIL =====
@@ -566,14 +639,31 @@ function renderClock(){
     btn.disabled=!en;
     btn.style.cssText=`background:${en?bc.bg:"rgba(255,255,255,.02)"};border:1px solid ${en?bc.border:"rgba(255,255,255,.05)"};color:${en?bc.color:"#2d3748"};cursor:${en?"pointer":"not-allowed"};opacity:${en?1:.4};padding:16px 12px;border-radius:16px;font-size:14px;font-weight:700;display:flex;flex-direction:column;align-items:center;gap:5px;transition:all .15s;font-family:inherit;`;
   });
+  // 退勤後の再出勤を強調するためボタン文言を切り替え
+  const btnIn = document.getElementById("btn-clockIn");
+  if(btnIn){
+    const label = (status==="done") ? "再出勤" : "出勤";
+    btnIn.innerHTML = `<span class="icon">🟢</span>${label}`;
+  }
   const rec=getTodayRecord(), card=document.getElementById("today-card");
-  if(rec){
+  if(rec && rec.sessions && rec.sessions.length){
     card.style.display="block";
     const row=(l,v,hl)=>`<div class="irow"><span class="irow-label">${l}</span><span class="irow-value${hl?" hl":v?"":" empty"}">${v||"--:--:--"}</span></div>`;
-    let html=row("出勤",rec.clockIn);
-    rec.breaks.forEach((b,i)=>{const s=rec.breaks.length>1?i+1:""; html+=row(`休憩${s}イン`,b.in)+row(`休憩${s}アウト`,b.out);});
-    html+=row("退勤",rec.clockOut);
-    if(rec.clockOut) html+=`<div class="divider"></div>`+row("実労働時間",fmtDuration(calcWorkTime(rec)),true);
+    let html="";
+    const multi = rec.sessions.length>1;
+    rec.sessions.forEach((s,si)=>{
+      if(multi){
+        html+=`<div style="font-size:11px;color:var(--muted);font-weight:700;margin:${si===0?"0":"8px"} 0 4px;letter-spacing:.05em;">セッション${si+1}</div>`;
+      }
+      html+=row("出勤", s.clockIn);
+      (s.breaks||[]).forEach((b,i)=>{
+        const lbl=(s.breaks.length>1)?(i+1):"";
+        html+=row(`休憩${lbl}イン`, b.in)+row(`休憩${lbl}アウト`, b.out);
+      });
+      html+=row("退勤", s.clockOut);
+    });
+    const wt=calcWorkTime(rec);
+    if(wt!==null) html+=`<div class="divider"></div>`+row("実労働時間", fmtDuration(wt), true);
     document.getElementById("today-rows").innerHTML=html;
   } else { card.style.display="none"; }
   if(currentTab==="シート") renderSheetView();
@@ -610,20 +700,36 @@ function renderDailySheet(){
   let html=`<div class="sheet-top"><span class="sheet-count">全${recs.length}件</span><button class="clear-btn" onclick="clearUserRecords()">🗑 削除</button></div>`;
   if(!recs.length) return html+`<div class="empty-msg">まだ記録がありません</div>`;
   html+=[...recs].reverse().map(r=>{
+    migrateRecord(r);
     const scfg=STATUS_CONFIG[r.status]||STATUS_CONFIG.idle;
-    let cells=`<div><div class="cell-lbl">出勤</div><div class="cell-val${r.clockIn?"":" empty"}">${r.clockIn||"--:--:--"}</div></div>
-               <div><div class="cell-lbl">退勤</div><div class="cell-val${r.clockOut?"":" empty"}">${r.clockOut||"--:--:--"}</div></div>`;
-    r.breaks.forEach((b,i)=>{const s=r.breaks.length>1?i+1:"";
-      cells+=`<div><div class="cell-lbl">休憩${s}イン</div><div class="cell-val${b.in?"":" empty"}">${b.in||"--:--"}</div></div>
-              <div><div class="cell-lbl">休憩${s}アウト</div><div class="cell-val${b.out?"":" empty"}">${b.out||"--:--"}</div></div>`;
+    const sessions=r.sessions||[];
+    const multi=sessions.length>1;
+    let sessionHtml="";
+    sessions.forEach((s,si)=>{
+      let cells=`<div><div class="cell-lbl">出勤</div><div class="cell-val${s.clockIn?"":" empty"}">${s.clockIn||"--:--:--"}</div></div>
+                 <div><div class="cell-lbl">退勤</div><div class="cell-val${s.clockOut?"":" empty"}">${s.clockOut||"--:--:--"}</div></div>`;
+      (s.breaks||[]).forEach((b,i)=>{const lbl=s.breaks.length>1?i+1:"";
+        cells+=`<div><div class="cell-lbl">休憩${lbl}イン</div><div class="cell-val${b.in?"":" empty"}">${b.in||"--:--"}</div></div>
+                <div><div class="cell-lbl">休憩${lbl}アウト</div><div class="cell-val${b.out?"":" empty"}">${b.out||"--:--"}</div></div>`;
+      });
+      if(multi){
+        sessionHtml+=`<div style="font-size:10px;color:var(--muted);font-weight:700;margin:${si===0?"0":"8px"} 0 4px;letter-spacing:.05em;">セッション${si+1}</div>`;
+      }
+      sessionHtml+=`<div class="cell-grid">${cells}</div>`;
     });
+    if(!sessions.length){
+      sessionHtml=`<div class="cell-grid">
+        <div><div class="cell-lbl">出勤</div><div class="cell-val empty">--:--:--</div></div>
+        <div><div class="cell-lbl">退勤</div><div class="cell-val empty">--:--:--</div></div>
+      </div>`;
+    }
     const wt=calcWorkTime(r);
     return `<div class="record-card">
       <div class="rec-header">
         <span class="rec-date">${r.date}</span>
         <span class="rec-status" style="background:${scfg.bg};color:${scfg.color};border:1px solid ${scfg.border}">${scfg.label}</span>
       </div>
-      <div class="cell-grid">${cells}</div>
+      ${sessionHtml}
       ${wt?`<div class="wt-row"><span class="wt-label">実労働時間</span><span class="wt-val">${fmtDuration(wt)}</span></div>`:""}
     </div>`;
   }).join("");
@@ -667,8 +773,9 @@ function renderWeeklySheet(){
   const sun=new Date(mon); sun.setDate(mon.getDate()+6);
   const periodLabel=`${mon.toLocaleDateString("ja-JP",{month:"2-digit",day:"2-digit"})} 〜 ${sun.toLocaleDateString("ja-JP",{month:"2-digit",day:"2-digit"})}`;
 
+  weekRecs.forEach(migrateRecord);
   const totalMs=weekRecs.reduce((a,r)=>a+(calcWorkTime(r)||0),0);
-  const days=weekRecs.filter(r=>r.clockIn).length;
+  const days=weekRecs.filter(r=>firstClockIn(r)).length;
   const avgMs=days?Math.floor(totalMs/days):0;
 
   let html=navBar(periodLabel, sortedKeys.length, idx);
@@ -684,9 +791,11 @@ function renderWeeklySheet(){
     </div>`;
   [...weekRecs].reverse().forEach(r=>{
     const wt=calcWorkTime(r);
+    const ci=firstClockIn(r), co=lastClockOut(r);
+    const multi=(r.sessions||[]).length>1?` (${r.sessions.length}回)`:"";
     html+=`<div class="day-row">
       <span class="day-row-date">${r.date.replace(/\d{4}\//,"")}</span>
-      <span class="day-row-times">${r.clockIn||"--"}→${r.clockOut||"--"}</span>
+      <span class="day-row-times">${ci||"--"}→${co||"--"}${multi}</span>
       <span class="day-row-wt">${wt?fmtDuration(wt):"--"}</span>
     </div>`;
   });
@@ -709,8 +818,9 @@ function renderMonthlySheet(){
   const [y,m]=key.split("/");
   const periodLabel=`${y}年${m}月`;
 
+  monthRecs.forEach(migrateRecord);
   const totalMs=monthRecs.reduce((a,r)=>a+(calcWorkTime(r)||0),0);
-  const days=monthRecs.filter(r=>r.clockIn).length;
+  const days=monthRecs.filter(r=>firstClockIn(r)).length;
   const avgMs=days?Math.floor(totalMs/days):0;
 
   let html=navBar(periodLabel, sortedKeys.length, idx);
@@ -726,9 +836,11 @@ function renderMonthlySheet(){
     </div>`;
   [...monthRecs].reverse().forEach(r=>{
     const wt=calcWorkTime(r);
+    const ci=firstClockIn(r), co=lastClockOut(r);
+    const multi=(r.sessions||[]).length>1?` (${r.sessions.length}回)`:"";
     html+=`<div class="day-row">
       <span class="day-row-date">${r.date.replace(/\d{4}\//,"")}</span>
-      <span class="day-row-times">${r.clockIn||"--"}→${r.clockOut||"--"}</span>
+      <span class="day-row-times">${ci||"--"}→${co||"--"}${multi}</span>
       <span class="day-row-wt">${wt?fmtDuration(wt):"--"}</span>
     </div>`;
   });
