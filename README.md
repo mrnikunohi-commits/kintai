@@ -1,1 +1,1341 @@
-# kintai
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="勤怠管理" />
+  <title>勤怠管理</title>
+  <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+  <style>
+    :root {
+      --bg: #0a0f1e;
+      --card: rgba(255,255,255,0.04);
+      --border: rgba(255,255,255,0.08);
+      --text: #e2e8f0;
+      --muted: #64748b;
+      --accent: #6366f1;
+      --green: #10b981;
+      --amber: #f59e0b;
+      --blue: #3b82f6;
+      --red: #ef4444;
+      --purple: #818cf8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    body {
+      min-height: 100vh;
+      background: var(--bg);
+      font-family: 'Hiragino Kaku Gothic ProN','Noto Sans JP','Yu Gothic',sans-serif;
+      color: var(--text); overflow-x: hidden;
+    }
+    .screen { display: none; min-height: 100vh; flex-direction: column; align-items: center; padding: 52px 16px 40px; }
+    .screen.active { display: flex; }
+
+    /* SELECT */
+    #screen-select { justify-content: flex-start; }
+    .select-header { width:100%; max-width:480px; margin-bottom:24px; }
+    .select-header h1 { font-size:24px; font-weight:800; color:#f8fafc; letter-spacing:.06em; }
+    .select-header p { font-size:13px; color:var(--muted); margin-top:4px; }
+    .user-grid { width:100%; max-width:480px; display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:16px; }
+    .user-card {
+      background:var(--card); border:1px solid var(--border);
+      border-radius:18px; padding:20px 14px; text-align:center;
+      cursor:pointer; transition:all .2s; position:relative; overflow:hidden;
+    }
+    .user-card:active { transform:scale(.96); }
+    .user-avatar { width:52px; height:52px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:22px; margin:0 auto 10px; background:linear-gradient(135deg,var(--accent),#a78bfa); }
+    .user-name { font-size:15px; font-weight:700; color:#f1f5f9; margin-bottom:4px; }
+    .user-status-dot { display:inline-flex; align-items:center; gap:5px; font-size:11px; }
+    .sdot { width:6px; height:6px; border-radius:50%; background:var(--muted); }
+    .sdot.working { background:var(--green); box-shadow:0 0 5px var(--green); }
+    .sdot.break   { background:var(--amber); box-shadow:0 0 5px var(--amber); }
+    .sdot.done    { background:var(--purple); }
+    .select-links { width:100%; max-width:480px; display:flex; justify-content:center; gap:18px; margin-top:6px; }
+    .admin-link { font-size:12px; color:var(--muted); cursor:pointer; text-decoration:underline; }
+    .dash-link { font-size:13px; font-weight:700; color:var(--purple); cursor:pointer; text-decoration:underline; }
+
+    /* PIN */
+    #screen-pin { justify-content:center; }
+    .pin-box { width:100%; max-width:200px; text-align:center; }
+    .pin-user-name { font-size:14px; font-weight:800; color:#f8fafc; margin-bottom:2px; }
+    .pin-sub { font-size:11px; color:var(--muted); margin-bottom:12px; }
+    .pin-dots { display:flex; justify-content:center; gap:8px; margin-bottom:12px; }
+    .pin-dot { width:10px; height:10px; border-radius:50%; border:2px solid rgba(255,255,255,.2); transition:all .15s; }
+    .pin-dot.filled { background:var(--accent); border-color:var(--accent); box-shadow:0 0 6px rgba(99,102,241,.5); }
+    .pin-dot.error  { background:var(--red); border-color:var(--red); }
+    .pin-error { font-size:11px; color:var(--red); margin-bottom:6px; min-height:16px; }
+    .numpad { display:grid; grid-template-columns:repeat(3,1fr); gap:4px; }
+    .num-btn {
+      width:42px; height:42px; border-radius:50%;
+      border:1px solid var(--border); background:var(--card);
+      color:var(--text); font-size:14px; font-weight:600;
+      cursor:pointer; font-family:inherit; transition:all .15s;
+      display:flex; align-items:center; justify-content:center;
+    }
+    .num-btn:active { background:rgba(99,102,241,.2); border-color:var(--accent); transform:scale(.93); }
+    .num-btn.del { font-size:14px; color:var(--muted); }
+    .num-btn.empty { background:transparent; border-color:transparent; cursor:default; }
+    .pin-back { margin-top:14px; font-size:12px; color:var(--muted); cursor:pointer; display:inline-flex; align-items:center; gap:4px; }
+
+    /* CLOCK */
+    #screen-clock { justify-content:flex-start; }
+    .clock-header { width:100%; max-width:480px; display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
+    .clock-user-info { display:flex; flex-direction:column; }
+    .clock-user-label { font-size:11px; color:var(--muted); }
+    .clock-user-name  { font-size:17px; font-weight:800; color:#f8fafc; }
+    .header-right { display:flex; gap:6px; align-items:center; }
+    .tab-btn { padding:5px 11px; border-radius:20px; border:none; cursor:pointer; font-size:12px; font-weight:600; transition:all .2s; font-family:inherit; }
+    .tab-btn.active   { background:var(--accent); color:#fff; }
+    .tab-btn.inactive { background:rgba(255,255,255,.07); color:var(--muted); }
+    .logout-btn { padding:5px 11px; border-radius:20px; border:1px solid var(--border); background:transparent; color:var(--muted); font-size:12px; cursor:pointer; font-family:inherit; }
+
+    .clock-card { width:100%; max-width:480px; background:var(--card); border-radius:24px; padding:24px; margin-bottom:14px; text-align:center; border:1px solid var(--border); }
+    .date-lbl  { font-size:13px; color:var(--muted); margin-bottom:2px; }
+    .clock-time { font-size:48px; font-weight:800; letter-spacing:.04em; color:#f8fafc; line-height:1.1; }
+    .status-badge { margin-top:12px; display:inline-flex; align-items:center; gap:8px; padding:5px 14px; border-radius:20px; }
+    .status-dot-lg { width:8px; height:8px; border-radius:50%; }
+    .status-text { font-size:13px; font-weight:600; }
+
+    .btn-grid { width:100%; max-width:480px; display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:14px; }
+    .action-btn { padding:16px 12px; border-radius:16px; border:none; cursor:pointer; font-size:14px; font-weight:700; display:flex; flex-direction:column; align-items:center; gap:5px; transition:all .15s; font-family:inherit; }
+    .action-btn .icon { font-size:22px; }
+    .action-btn:not(:disabled):active { transform:scale(.95); }
+
+    .today-card { width:100%; max-width:480px; background:var(--card); border:1px solid var(--border); border-radius:16px; padding:14px 18px; }
+    .today-title { font-size:11px; color:var(--muted); margin-bottom:8px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; }
+    .irow { display:flex; justify-content:space-between; margin-bottom:5px; }
+    .irow-label { font-size:12px; color:var(--muted); }
+    .irow-value { font-size:12px; font-weight:500; color:var(--text); }
+    .irow-value.empty { color:#2d3748; }
+    .irow-value.hl { font-weight:800; color:var(--purple); font-size:14px; }
+    .divider { border-top:1px solid var(--border); margin:7px 0; }
+
+    /* SHEET TABS */
+    .sheet-wrap { width:100%; max-width:480px; }
+    .sheet-nav { display:flex; gap:6px; margin-bottom:14px; }
+    .snav-btn { padding:5px 13px; border-radius:16px; border:none; cursor:pointer; font-size:12px; font-weight:600; font-family:inherit; transition:all .2s; }
+    .snav-btn.active   { background:var(--accent); color:#fff; }
+    .snav-btn.inactive { background:rgba(255,255,255,.07); color:var(--muted); }
+    .sheet-top { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+    .sheet-count { font-size:13px; color:var(--muted); font-weight:600; }
+    .clear-btn { padding:5px 10px; border-radius:8px; border:1px solid rgba(239,68,68,.3); background:rgba(239,68,68,.07); color:#f87171; cursor:pointer; font-size:11px; font-weight:600; font-family:inherit; }
+
+    /* 月・週 サマリー */
+    .period-selector { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
+    .period-btn { padding:6px 12px; border-radius:10px; border:1px solid var(--border); background:var(--card); color:var(--muted); cursor:pointer; font-size:16px; font-family:inherit; }
+    .period-label { font-size:14px; font-weight:700; color:#f1f5f9; flex:1; text-align:center; }
+    .summary-card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:14px 16px; margin-bottom:10px; }
+    .summary-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+    .summary-period { font-size:13px; font-weight:700; color:#f1f5f9; }
+    .summary-total { font-size:15px; font-weight:800; color:var(--purple); }
+    .summary-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:8px; }
+    .summary-stat { text-align:center; }
+    .summary-stat-val { font-size:16px; font-weight:800; color:#f1f5f9; }
+    .summary-stat-lbl { font-size:10px; color:var(--muted); margin-top:2px; }
+    .day-row { display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-top:1px solid var(--border); }
+    .day-row-date { font-size:12px; color:var(--muted); min-width:80px; }
+    .day-row-times { font-size:12px; color:var(--text); }
+    .day-row-wt { font-size:12px; font-weight:700; color:var(--purple); }
+
+    /* 日別シート */
+    .record-card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:12px 16px; margin-bottom:8px; }
+    .rec-header { display:flex; justify-content:space-between; margin-bottom:8px; }
+    .rec-date { font-weight:700; font-size:13px; color:#f1f5f9; }
+    .rec-status { font-size:11px; font-weight:600; padding:2px 8px; border-radius:10px; }
+    .cell-grid { display:grid; grid-template-columns:1fr 1fr; gap:5px 4px; }
+    .cell-lbl { font-size:10px; color:#475569; margin-bottom:1px; }
+    .cell-val { font-size:12px; font-weight:600; color:var(--text); }
+    .cell-val.empty { color:#2d3748; }
+    .wt-row { display:flex; justify-content:space-between; align-items:center; margin-top:8px; padding-top:8px; border-top:1px solid var(--border); }
+    .wt-label { font-size:11px; color:var(--muted); }
+    .wt-val   { font-size:14px; font-weight:800; color:var(--purple); }
+    .empty-msg { text-align:center; color:#334155; padding:36px; font-size:13px; }
+
+    /* DASHBOARD */
+    #screen-dash { justify-content:flex-start; }
+    .dash-hero { background:linear-gradient(135deg,rgba(99,102,241,.18),rgba(129,140,248,.06)); border:1px solid rgba(99,102,241,.28); border-radius:20px; padding:20px 18px; margin-bottom:14px; text-align:center; }
+    .dash-hero-lbl { font-size:12px; color:var(--muted); font-weight:600; letter-spacing:.05em; }
+    .dash-hero-val { font-size:34px; font-weight:800; color:#f8fafc; line-height:1.2; margin:4px 0 6px; }
+    .dash-hero-sub { font-size:12px; color:var(--muted); }
+    .dash-bar { height:5px; border-radius:4px; background:rgba(255,255,255,.06); overflow:hidden; margin-top:4px; }
+    .dash-bar > span { display:block; height:100%; border-radius:4px; background:linear-gradient(90deg,var(--accent),#a78bfa); }
+    .dash-name { display:flex; align-items:center; gap:8px; }
+    .dash-ava { width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:13px; background:linear-gradient(135deg,var(--accent),#a78bfa); }
+    .dash-toolbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; gap:8px; }
+    .dash-src { font-size:11px; color:var(--muted); }
+    .dash-refresh { padding:5px 11px; border-radius:8px; border:1px solid var(--border); background:var(--card); color:var(--muted); cursor:pointer; font-size:11px; font-family:inherit; }
+
+    /* ADMIN */
+    #screen-admin { justify-content:flex-start; }
+    .admin-header { width:100%; max-width:480px; display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; }
+    .admin-header h2 { font-size:19px; font-weight:800; color:#f8fafc; }
+    .back-btn { padding:5px 12px; border-radius:20px; border:1px solid var(--border); background:transparent; color:var(--muted); font-size:12px; cursor:pointer; font-family:inherit; }
+    .admin-section { width:100%; max-width:480px; margin-bottom:20px; }
+    .admin-section-title { font-size:11px; color:var(--muted); font-weight:600; letter-spacing:.08em; text-transform:uppercase; margin-bottom:8px; }
+    .admin-user-row { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:10px 14px; margin-bottom:7px; display:flex; align-items:center; justify-content:space-between; }
+    .admin-user-info { display:flex; align-items:center; gap:10px; }
+    .admin-avatar { width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:14px; background:linear-gradient(135deg,var(--accent),#a78bfa); }
+    .admin-user-name { font-size:13px; font-weight:700; color:#f1f5f9; }
+    .admin-user-pin  { font-size:11px; color:var(--muted); }
+    .del-user-btn { padding:3px 9px; border-radius:7px; border:1px solid rgba(239,68,68,.3); background:rgba(239,68,68,.07); color:#f87171; cursor:pointer; font-size:11px; font-family:inherit; }
+    .add-form { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:14px; }
+    .form-field { margin-bottom:10px; }
+    .form-label { font-size:11px; color:var(--muted); margin-bottom:5px; display:block; font-weight:600; }
+    .form-input { width:100%; padding:9px 13px; border-radius:10px; border:1px solid var(--border); background:rgba(255,255,255,.05); color:var(--text); font-size:14px; font-family:inherit; outline:none; }
+    .form-input:focus { border-color:var(--accent); }
+    .form-submit { width:100%; padding:11px; border-radius:10px; border:none; background:var(--accent); color:#fff; font-size:13px; font-weight:700; cursor:pointer; font-family:inherit; transition:all .2s; }
+    .form-submit:active { transform:scale(.97); background:#4f46e5; }
+    .form-submit.sub { background:rgba(99,102,241,.3); }
+    .form-msg { font-size:11px; margin-top:7px; min-height:16px; }
+    .form-msg.error { color:var(--red); }
+    .form-msg.ok    { color:var(--green); }
+    .hint { font-size:11px; color:var(--muted); margin-top:4px; }
+
+    /* toast */
+    #toast {
+      position:fixed; bottom:32px; left:50%; transform:translateX(-50%) translateY(20px);
+      background:#1e293b; border:1px solid var(--border); border-radius:12px;
+      padding:10px 18px; font-size:13px; color:var(--text);
+      opacity:0; transition:all .3s; pointer-events:none; white-space:nowrap; z-index:999;
+    }
+    #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+  </style>
+</head>
+<body>
+
+<!-- SELECT -->
+<div class="screen active" id="screen-select">
+  <div class="select-header">
+    <h1>⏱ 勤怠管理</h1>
+    <p>名前を選んでください</p>
+  </div>
+  <div class="user-grid" id="user-grid"></div>
+  <div class="select-links">
+    <span class="dash-link" onclick="goDashPin()">📊 ダッシュボード</span>
+    <span class="admin-link" onclick="goAdmin()">⚙️ 管理者設定</span>
+  </div>
+</div>
+
+<!-- PIN -->
+<div class="screen" id="screen-pin">
+  <div class="pin-box">
+    <div class="pin-user-name" id="pin-name"></div>
+    <div class="pin-sub" id="pin-sub">4桁のPINを入力してください</div>
+    <div class="pin-dots">
+      <div class="pin-dot"></div><div class="pin-dot"></div>
+      <div class="pin-dot"></div><div class="pin-dot"></div>
+    </div>
+    <div class="pin-error" id="pin-error"></div>
+    <div class="numpad">
+      <button class="num-btn" onclick="numPress('1')">1</button>
+      <button class="num-btn" onclick="numPress('2')">2</button>
+      <button class="num-btn" onclick="numPress('3')">3</button>
+      <button class="num-btn" onclick="numPress('4')">4</button>
+      <button class="num-btn" onclick="numPress('5')">5</button>
+      <button class="num-btn" onclick="numPress('6')">6</button>
+      <button class="num-btn" onclick="numPress('7')">7</button>
+      <button class="num-btn" onclick="numPress('8')">8</button>
+      <button class="num-btn" onclick="numPress('9')">9</button>
+      <button class="num-btn empty"></button>
+      <button class="num-btn" onclick="numPress('0')">0</button>
+      <button class="num-btn del" onclick="numDel()">⌫</button>
+    </div>
+    <div class="pin-back" onclick="goSelect()">← 戻る</div>
+  </div>
+</div>
+
+<!-- CLOCK -->
+<div class="screen" id="screen-clock">
+  <div class="clock-header">
+    <div class="clock-user-info">
+      <span class="clock-user-label">ログイン中</span>
+      <span class="clock-user-name" id="clock-username"></span>
+    </div>
+    <div class="header-right">
+      <button class="tab-btn active"   id="tab-打刻"  onclick="switchTab('打刻')">打刻</button>
+      <button class="tab-btn inactive" id="tab-シート" onclick="switchTab('シート')">シート</button>
+      <button class="logout-btn" onclick="goSelect()">退出</button>
+    </div>
+  </div>
+
+  <!-- 打刻 -->
+  <div id="tab-content-打刻">
+    <div class="clock-card">
+      <div class="date-lbl" id="date-label"></div>
+      <div class="clock-time" id="clock-time"></div>
+      <div class="status-badge" id="status-badge">
+        <div class="status-dot-lg" id="status-dot"></div>
+        <span class="status-text" id="status-text"></span>
+      </div>
+    </div>
+    <div class="btn-grid">
+      <button class="action-btn" id="btn-clockIn"  onclick="handleAction('clockIn')"><span class="icon">🟢</span>出勤</button>
+      <button class="action-btn" id="btn-breakIn"  onclick="handleAction('breakIn')"><span class="icon">☕</span>休憩イン</button>
+      <button class="action-btn" id="btn-breakOut" onclick="handleAction('breakOut')"><span class="icon">🔄</span>休憩アウト</button>
+      <button class="action-btn" id="btn-clockOut" onclick="handleAction('clockOut')"><span class="icon">🔴</span>退勤</button>
+    </div>
+    <div class="today-card" id="today-card" style="display:none;">
+      <div class="today-title">本日の記録</div>
+      <div id="today-rows"></div>
+    </div>
+  </div>
+
+  <!-- シート -->
+  <div id="tab-content-シート" style="display:none;">
+    <div class="sheet-wrap">
+      <div class="sheet-nav">
+        <button class="snav-btn active"   id="snav-日" onclick="switchSheet('日')">日別</button>
+        <button class="snav-btn inactive" id="snav-週" onclick="switchSheet('週')">週別</button>
+        <button class="snav-btn inactive" id="snav-月" onclick="switchSheet('月')">月別</button>
+      </div>
+      <div id="sheet-body"></div>
+    </div>
+  </div>
+</div>
+
+<!-- DASHBOARD -->
+<div class="screen" id="screen-dash">
+  <div class="admin-header">
+    <h2>📊 ダッシュボード</h2>
+    <button class="back-btn" onclick="goSelect()">← 戻る</button>
+  </div>
+  <div class="sheet-wrap">
+    <div class="dash-toolbar">
+      <span class="dash-src" id="dash-src"></span>
+      <button class="dash-refresh" onclick="loadDashboard()">🔄 更新</button>
+    </div>
+    <div id="dash-nav"></div>
+    <div id="dash-body"></div>
+  </div>
+</div>
+
+<!-- ADMIN -->
+<div class="screen" id="screen-admin">
+  <div class="admin-header">
+    <h2>⚙️ 管理者設定</h2>
+    <button class="back-btn" onclick="goSelect()">← 戻る</button>
+  </div>
+
+  <!-- クラウド連携 -->
+  <div class="admin-section">
+    <div class="admin-section-title">☁️ クラウド連携（ダッシュボード用）</div>
+    <div class="add-form">
+      <div class="form-field">
+        <label class="form-label">Google Apps Script ウェブアプリURL</label>
+        <input class="form-input" id="cfg-cloud" type="text" placeholder="https://script.google.com/macros/s/.../exec" />
+        <div class="hint">空欄の場合はこの端末のデータだけで動きます（ダッシュボードもこの端末分のみ）</div>
+      </div>
+      <div class="form-field">
+        <label class="form-label">ダッシュボードPIN（クラウド未設定時のみ使用）</label>
+        <input class="form-input" id="cfg-dashpin" type="number" placeholder="0000" />
+        <div class="hint">クラウド連携時はGASスクリプト内の ADMIN_PIN が使われます</div>
+      </div>
+      <button class="form-submit" onclick="saveCloudConfig()">💾 保存する</button>
+      <button class="form-submit sub" style="margin-top:8px;" onclick="cloudTest()">🔌 接続テスト</button>
+      <button class="form-submit sub" style="margin-top:8px;" onclick="cloudPushAll()">⬆️ この端末の全記録をクラウドへ送信</button>
+      <button class="form-submit sub" style="margin-top:8px;" onclick="cloudPullUsers()">⬇️ クラウドからスタッフを取得</button>
+      <div class="form-msg" id="cloud-msg"></div>
+    </div>
+  </div>
+
+  <!-- EmailJS設定 -->
+  <div class="admin-section">
+    <div class="admin-section-title">📧 メール通知設定</div>
+    <div class="add-form">
+      <div class="form-field">
+        <label class="form-label">通知先メールアドレス</label>
+        <input class="form-input" id="cfg-email" type="email" placeholder="manager@example.com" />
+      </div>
+      <div class="form-field">
+        <label class="form-label">EmailJS Public Key</label>
+        <input class="form-input" id="cfg-pubkey" type="text" placeholder="xxxxxxxxxxxxxxxxxxxx" />
+        <div class="hint">EmailJS → Account → Public Key</div>
+      </div>
+      <div class="form-field">
+        <label class="form-label">EmailJS Service ID</label>
+        <input class="form-input" id="cfg-service" type="text" placeholder="service_xxxxxxx" />
+      </div>
+      <div class="form-field">
+        <label class="form-label">EmailJS Template ID</label>
+        <input class="form-input" id="cfg-template" type="text" placeholder="template_xxxxxxx" />
+        <div class="hint">テンプレート変数: {{name}} {{action}} {{time}} {{date}}</div>
+      </div>
+      <button class="form-submit" onclick="saveEmailConfig()">💾 保存する</button>
+      <button class="form-submit" style="margin-top:8px;background:rgba(99,102,241,.3);" onclick="testEmail()">📤 テスト送信</button>
+      <div class="form-msg" id="email-msg"></div>
+    </div>
+  </div>
+
+  <div class="admin-section">
+    <div class="admin-section-title">スタッフ一覧</div>
+    <div id="admin-user-list"></div>
+  </div>
+  <div class="admin-section">
+    <div class="admin-section-title">スタッフを追加</div>
+    <div class="add-form">
+      <div class="form-field">
+        <label class="form-label">名前</label>
+        <input class="form-input" id="new-name" type="text" placeholder="例：田中 太郎" maxlength="20" />
+      </div>
+      <div class="form-field">
+        <label class="form-label">4桁のPIN</label>
+        <input class="form-input" id="new-pin" type="number" placeholder="例：1234" />
+        <div class="hint">※ 本人にのみ伝えてください</div>
+      </div>
+      <button class="form-submit" onclick="addUser()">＋ 追加する</button>
+      <div class="form-msg" id="form-msg"></div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ===== クラウド連携URL（ここに貼り付けると全端末で自動的に有効になります） =====
+const CLOUD_URL_DEFAULT = "https://script.google.com/macros/s/AKfycbwrX--5k12O6u8fnw_RhsWmKokOkTWCLxZbg1PKIzOik-Lug9xHjfcdBce4AO6BOTz7nw/exec";
+
+// ===== DATA =====
+const STORAGE_KEY = "kintai_v4";
+let data = { users:[], records:{}, emailConfig:{} };
+try { data = JSON.parse(localStorage.getItem(STORAGE_KEY)||"{}"); } catch(e){}
+if (!data.users)       data.users = [];
+if (!data.records)     data.records = {};
+if (typeof data.cloudUrl !== "string") data.cloudUrl = "";
+if (!Array.isArray(data.syncQueue))    data.syncQueue = [];
+if (typeof data.dashPin  !== "string") data.dashPin = "0000";
+// EmailJS設定を直接埋め込み（常にこの設定を使用）
+data.emailConfig = {
+  email:      "mr.nikunohi@gmail.com",
+  pubkey:     "uNCrMwiiBIjx5UEJv",
+  serviceId:  "service_xdp8yrp",
+  templateId: "template_ftjreos",
+};
+function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
+
+// ===== MIGRATION: 旧フォーマット → sessions形式 =====
+function migrateRecord(rec){
+  if(rec.sessions) return rec; // 既に新形式
+  const session = {
+    clockIn:    rec.clockIn    || null,
+    clockInTs:  rec.clockInTs  || null,
+    breaks:     rec.breaks     || [],
+    clockOut:   rec.clockOut   || null,
+    clockOutTs: rec.clockOutTs || null,
+  };
+  rec.sessions = (rec.clockIn || rec.clockInTs) ? [session] : [];
+  delete rec.clockIn; delete rec.clockInTs;
+  delete rec.breaks;
+  delete rec.clockOut; delete rec.clockOutTs;
+  return rec;
+}
+for(const uid in data.records){
+  data.records[uid] = (data.records[uid]||[]).map(migrateRecord);
+}
+save();
+
+// 最新（=最後）のセッションを取得
+function lastSession(rec){
+  if(!rec || !rec.sessions || !rec.sessions.length) return null;
+  return rec.sessions[rec.sessions.length-1];
+}
+// 最初の出勤・最後の退勤（サマリー表示用）
+function firstClockIn(rec){
+  if(!rec || !rec.sessions) return null;
+  for(const s of rec.sessions){ if(s.clockIn) return s.clockIn; }
+  return null;
+}
+function lastClockOut(rec){
+  if(!rec || !rec.sessions) return null;
+  for(let i=rec.sessions.length-1; i>=0; i--){
+    if(rec.sessions[i].clockOut) return rec.sessions[i].clockOut;
+  }
+  return null;
+}
+
+// ===== STATE =====
+let currentUser = null;
+let pinInput = "";
+let pinTarget = null;
+let pinMode = "user";      // "user" | "dash"
+let pinBusy = false;
+let currentTab  = "打刻";
+let currentSheet = "日";
+let sheetPeriodOffset = 0;
+const EMOJIS = ["👤","😊","🙂","😎","🧑","👩","👨","🧑‍💼","👩‍💼","👨‍💼"];
+
+const STATUS_CONFIG = {
+  idle:    { label:"未出勤", color:"#94a3b8", bg:"rgba(148,163,184,.15)", border:"rgba(148,163,184,.3)" },
+  working: { label:"勤務中", color:"#10b981", bg:"rgba(16,185,129,.15)",  border:"rgba(16,185,129,.3)" },
+  break:   { label:"休憩中", color:"#f59e0b", bg:"rgba(245,158,11,.15)",  border:"rgba(245,158,11,.3)" },
+  done:    { label:"退勤済", color:"#818cf8", bg:"rgba(129,140,248,.15)", border:"rgba(129,140,248,.3)" },
+};
+const BTNS_CFG = {
+  clockIn:  { allowedFrom:["idle","done"], color:"#10b981", border:"rgba(16,185,129,.4)",  bg:"rgba(16,185,129,.1)" },
+  breakIn:  { allowedFrom:["working"],     color:"#f59e0b", border:"rgba(245,158,11,.4)",  bg:"rgba(245,158,11,.1)" },
+  breakOut: { allowedFrom:["break"],       color:"#3b82f6", border:"rgba(59,130,246,.4)",  bg:"rgba(59,130,246,.1)" },
+  clockOut: { allowedFrom:["working"],     color:"#ef4444", border:"rgba(239,68,68,.4)",   bg:"rgba(239,68,68,.1)" },
+};
+const ACTION_LABELS = { clockIn:"出勤", breakIn:"休憩イン", breakOut:"休憩アウト", clockOut:"退勤" };
+
+// ===== UTILS =====
+function fmtTime(d)  { return d.toLocaleTimeString("ja-JP",{hour:"2-digit",minute:"2-digit",second:"2-digit"}); }
+function fmtDate(d)  { return d.toLocaleDateString("ja-JP",{year:"numeric",month:"2-digit",day:"2-digit",weekday:"short"}); }
+function fmtDateShort(d){ return d.toLocaleDateString("ja-JP",{month:"2-digit",day:"2-digit",weekday:"short"}); }
+function todayStr()  { return new Date().toLocaleDateString("ja-JP"); }
+function fmtDuration(ms){
+  if(!ms||ms<0) return "--";
+  const h=Math.floor(ms/3600000), m=Math.floor((ms%3600000)/60000);
+  return h+"時間"+String(m).padStart(2,"0")+"分";
+}
+// ダッシュボード用（0でも "0時間00分" と表示する）
+function fmtDur0(ms){
+  const v = (!ms||ms<0) ? 0 : ms;
+  const h=Math.floor(v/3600000), m=Math.floor((v%3600000)/60000);
+  return h+"時間"+String(m).padStart(2,"0")+"分";
+}
+function calcWorkTime(rec){
+  if(!rec?.sessions?.length) return null;
+  let total=0, hasCompleted=false;
+  for(const s of rec.sessions){
+    if(s.clockInTs && s.clockOutTs){
+      const brk=(s.breaks||[]).reduce((a,b)=>b.outTs?a+(b.outTs-b.inTs):a,0);
+      total += s.clockOutTs - s.clockInTs - brk;
+      hasCompleted = true;
+    }
+  }
+  return hasCompleted ? total : null;
+}
+function getUserStatus(uid){
+  const r=(data.records[uid]||[]).find(r=>r.date===todayStr());
+  return r?.status||"idle";
+}
+function escHtml(s){
+  return String(s==null?"":s).replace(/[&<>"']/g, c=>({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[c]));
+}
+
+// toast
+function toast(msg, ms=2200){
+  const el=document.getElementById("toast");
+  el.textContent=msg; el.classList.add("show");
+  setTimeout(()=>el.classList.remove("show"), ms);
+}
+
+// ===== SCREENS =====
+function showScreen(id){
+  document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));
+  document.getElementById(id).classList.add("active");
+}
+function goSelect(){ currentUser=null; pinInput=""; pinTarget=null; pinMode="user"; renderSelect(); showScreen("screen-select"); }
+function goAdmin(){ loadEmailConfigUI(); loadCloudConfigUI(); renderAdmin(); showScreen("screen-admin"); }
+
+// ===== SELECT =====
+function renderSelect(){
+  const grid=document.getElementById("user-grid");
+  if(!data.users.length){
+    grid.innerHTML='<div style="grid-column:1/-1;text-align:center;color:#475569;padding:28px;font-size:13px;">スタッフが登録されていません<br>管理者設定から追加してください</div>';
+    return;
+  }
+  grid.innerHTML=data.users.map((u,i)=>{
+    const st=getUserStatus(u.id), scfg=STATUS_CONFIG[st];
+    return `<div class="user-card" onclick="selectUser('${u.id}')">
+      <div class="user-avatar">${EMOJIS[i%EMOJIS.length]}</div>
+      <div class="user-name">${escHtml(u.name)}</div>
+      <div class="user-status-dot">
+        <div class="sdot ${st==="idle"?"":st}"></div>
+        <span style="color:${scfg.color}">${scfg.label}</span>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+// ===== PIN =====
+function selectUser(uid){
+  pinTarget=data.users.find(u=>u.id===uid);
+  if(!pinTarget) return;
+  pinMode="user"; pinInput=""; pinBusy=false;
+  document.getElementById("pin-name").textContent=pinTarget.name;
+  document.getElementById("pin-sub").textContent="4桁のPINを入力してください";
+  document.getElementById("pin-error").textContent="";
+  updatePinDots();
+  showScreen("screen-pin");
+}
+function goDashPin(){
+  pinMode="dash"; pinInput=""; pinTarget=null; pinBusy=false;
+  document.getElementById("pin-name").textContent="📊 ダッシュボード";
+  document.getElementById("pin-sub").textContent="管理者PINを入力してください";
+  document.getElementById("pin-error").textContent="";
+  updatePinDots();
+  showScreen("screen-pin");
+}
+function numPress(n){
+  if(pinBusy || pinInput.length>=4) return;
+  pinInput+=n; updatePinDots();
+  if(pinInput.length===4) setTimeout(checkPin,120);
+}
+function numDel(){ if(pinBusy) return; pinInput=pinInput.slice(0,-1); document.getElementById("pin-error").textContent=""; updatePinDots(); }
+function updatePinDots(){
+  document.querySelectorAll(".pin-dot").forEach((d,i)=>{
+    d.classList.remove("filled","error");
+    if(i<pinInput.length) d.classList.add("filled");
+  });
+}
+function pinFail(msg){
+  document.querySelectorAll(".pin-dot").forEach(d=>{d.classList.remove("filled");d.classList.add("error");});
+  document.getElementById("pin-error").textContent=msg||"PINが違います";
+  setTimeout(()=>{ pinInput=""; pinBusy=false; document.querySelectorAll(".pin-dot").forEach(d=>d.classList.remove("error")); document.getElementById("pin-error").textContent=""; },1100);
+}
+async function checkPin(){
+  if(pinMode==="dash"){
+    pinBusy=true;
+    document.getElementById("pin-error").textContent="";
+    document.getElementById("pin-sub").textContent="確認中…";
+    const entered=pinInput;
+    const res=await verifyDashPin(entered);
+    document.getElementById("pin-sub").textContent="管理者PINを入力してください";
+    if(res.ok){
+      adminPinCache=entered; pinInput=""; pinBusy=false; dashMonthOffset=0;
+      showScreen("screen-dash");
+      applyDashData(res.cloud);
+    } else {
+      pinFail(res.error||"PINが違います");
+    }
+    return;
+  }
+  if(pinInput===pinTarget.pin){
+    currentUser=pinTarget; pinInput=""; currentTab="打刻"; sheetPeriodOffset=0;
+    switchTab("打刻");
+    renderClock(); showScreen("screen-clock");
+  } else {
+    pinFail();
+  }
+}
+
+// ===== ACTION =====
+function handleAction(id){
+  const now=new Date(), timeStr=fmtTime(now), ts=now.getTime(), today=todayStr();
+  if(!data.records[currentUser.id]) data.records[currentUser.id]=[];
+  let recs=data.records[currentUser.id];
+  let rec=recs.find(r=>r.date===today);
+  if(!rec){
+    if(id!=="clockIn") return;
+    rec={date:today, status:"idle", sessions:[]};
+    recs.push(rec);
+  }
+  // 念のため旧レコードを移行
+  migrateRecord(rec);
+
+  if(id==="clockIn"){
+    // 退勤済 or 未出勤 のどちらからも新しいセッションを開始
+    rec.sessions.push({clockIn:timeStr, clockInTs:ts, breaks:[], clockOut:null, clockOutTs:null});
+    rec.status="working";
+  }
+  else if(id==="breakIn"){
+    const s=lastSession(rec);
+    if(!s) return;
+    s.breaks.push({in:timeStr, inTs:ts, out:null, outTs:null});
+    rec.status="break";
+  }
+  else if(id==="breakOut"){
+    const s=lastSession(rec);
+    if(!s) return;
+    const lb=s.breaks[s.breaks.length-1];
+    if(!lb) return;
+    lb.out=timeStr; lb.outTs=ts;
+    rec.status="working";
+  }
+  else if(id==="clockOut"){
+    const s=lastSession(rec);
+    if(!s) return;
+    s.clockOut=timeStr; s.clockOutTs=ts;
+    rec.status="done";
+  }
+  save(); renderClock();
+  // クラウドへ同期（失敗しても記録は端末に残り、後で自動再送されます）
+  syncRecord(currentUser.id, currentUser.name, rec);
+  // メール送信（再出勤の場合は "再出勤" として通知）
+  let actionLabel = ACTION_LABELS[id];
+  if(id==="clockIn" && rec.sessions.length>1) actionLabel = "再出勤";
+  sendNotification(currentUser.name, actionLabel, timeStr, today);
+}
+
+// ===== CLOUD =====
+function cloudUrl(){ return String(data.cloudUrl || CLOUD_URL_DEFAULT || "").trim(); }
+function cloudEnabled(){ return !!cloudUrl(); }
+
+async function cloudPost(payload){
+  const url=cloudUrl();
+  if(!url) throw new Error("クラウドURLが未設定です");
+  const res=await fetch(url, {
+    method:"POST",
+    // text/plain にすることでプリフライト(CORS)を回避
+    headers:{ "Content-Type":"text/plain;charset=utf-8" },
+    body: JSON.stringify(payload),
+  });
+  const j=await res.json();
+  if(!j || !j.ok) throw new Error((j&&j.error)||"サーバーエラー");
+  return j;
+}
+async function cloudGet(params){
+  const url=cloudUrl();
+  if(!url) throw new Error("クラウドURLが未設定です");
+  const q=new URLSearchParams(params).toString();
+  const res=await fetch(url+"?"+q, { method:"GET" });
+  return await res.json();
+}
+
+// 1件分の記録をクラウド用の形に変換
+function recToItem(uid, name, rec){
+  migrateRecord(rec);
+  return {
+    userId: uid,
+    userName: name,
+    date: rec.date,
+    status: rec.status||"",
+    clockIn: firstClockIn(rec)||"",
+    clockOut: lastClockOut(rec)||"",
+    workMs: calcWorkTime(rec)||0,
+    sessions: rec.sessions||[],
+  };
+}
+function localItems(){
+  const out=[];
+  data.users.forEach(u=>{
+    (data.records[u.id]||[]).forEach(r=>out.push(recToItem(u.id,u.name,r)));
+  });
+  return out;
+}
+
+// 送信キュー（オフライン・失敗時の保険）
+// 中身は「誰の・いつの記録か」だけを持ち、送信直前に端末の最新データから組み立てます。
+// こうすることで、再送のタイミングがずれても古い内容で上書きされません。
+function qKey(x){ return x.userId+"|"+x.date; }
+function queueItem(uid, date){
+  const k=uid+"|"+date;
+  data.syncQueue=(data.syncQueue||[]).filter(x=>qKey(x)!==k);
+  data.syncQueue.push({userId:uid, date:date});
+  if(data.syncQueue.length>500) data.syncQueue=data.syncQueue.slice(-500);
+  save();
+}
+function buildItem(ref){
+  const u=data.users.find(x=>x.id===ref.userId);
+  const rec=(data.records[ref.userId]||[]).find(r=>r.date===ref.date);
+  if(!u || !rec) return null;
+  return recToItem(u.id, u.name, rec);
+}
+
+// 送信は必ず1件ずつ順番に行う（後から古い内容が届くのを防ぐ）
+let syncChain = Promise.resolve();
+function enqueueSync(fn){ syncChain = syncChain.then(fn).catch(()=>{}); return syncChain; }
+
+function flushQueue(){
+  return enqueueSync(async ()=>{
+    if(!cloudEnabled() || !data.syncQueue || !data.syncQueue.length) return;
+    const refs=[...data.syncQueue];
+    const items=refs.map(buildItem).filter(Boolean);
+    if(!items.length){ data.syncQueue=[]; save(); return; }
+    for(let i=0;i<items.length;i+=100){
+      await cloudPost({action:"pushRecords", items:items.slice(i,i+100)});
+    }
+    const sent=new Set(refs.map(qKey));
+    data.syncQueue=(data.syncQueue||[]).filter(x=>!sent.has(qKey(x)));
+    save();
+  });
+}
+function syncRecord(uid, name, rec){
+  if(!cloudEnabled()) return;
+  const date=rec.date;
+  return enqueueSync(async ()=>{
+    const it=buildItem({userId:uid, date:date}) || recToItem(uid, name, rec);
+    try{
+      await cloudPost({action:"pushRecords", items:[it]});
+      data.syncQueue=(data.syncQueue||[]).filter(x=>qKey(x)!==(uid+"|"+date)); save();
+    }catch(e){
+      queueItem(uid, date);
+    }
+  });
+}
+async function syncUsers(){
+  if(!cloudEnabled()) return;
+  try{ await cloudPost({action:"pushUsers", users:data.users.map(u=>({id:u.id,name:u.name,pin:u.pin}))}); }catch(e){}
+}
+
+// --- 管理画面のクラウド設定 ---
+function loadCloudConfigUI(){
+  document.getElementById("cfg-cloud").value   = data.cloudUrl || "";
+  document.getElementById("cfg-dashpin").value = data.dashPin  || "";
+  const m=document.getElementById("cloud-msg");
+  if(m){
+    const n=(data.syncQueue||[]).length;
+    m.className="form-msg"; m.style.color="var(--muted)";
+    m.textContent = cloudEnabled()
+      ? ("接続先: 設定済み" + (n?` / 未送信 ${n}件`:""))
+      : "未設定（この端末だけで動作中）";
+  }
+}
+function setCloudMsg(type,text){
+  const m=document.getElementById("cloud-msg");
+  m.style.color=""; m.className="form-msg "+(type||""); m.textContent=text;
+}
+function saveCloudConfig(){
+  data.cloudUrl = document.getElementById("cfg-cloud").value.trim();
+  const p=String(document.getElementById("cfg-dashpin").value||"").trim();
+  if(p){ if(!/^\d{4}$/.test(p)){ setCloudMsg("error","ダッシュボードPINは4桁の数字で入力してください"); return; } data.dashPin=p; }
+  save();
+  setCloudMsg("ok","保存しました！");
+  if(cloudEnabled()) flushQueue();
+}
+async function cloudTest(){
+  if(!cloudEnabled()){ setCloudMsg("error","URLを入力して保存してください"); return; }
+  setCloudMsg("","接続中…");
+  try{
+    const j=await cloudGet({action:"ping"});
+    if(j && j.ok) setCloudMsg("ok","✅ 接続できました（スプレッドシート連携OK）");
+    else setCloudMsg("error","応答が不正です: "+JSON.stringify(j));
+  }catch(e){ setCloudMsg("error","接続失敗: "+e.message+"（URLとデプロイ設定「全員がアクセス可」を確認してください）"); }
+}
+async function cloudPushAll(){
+  if(!cloudEnabled()){ setCloudMsg("error","URLを入力して保存してください"); return; }
+  const items=localItems();
+  setCloudMsg("",`送信中… (${items.length}件)`);
+  try{
+    for(let i=0;i<items.length;i+=100){
+      await cloudPost({action:"pushRecords", items:items.slice(i,i+100)});
+      setCloudMsg("",`送信中… (${Math.min(i+100,items.length)}/${items.length})`);
+    }
+    await cloudPost({action:"pushUsers", users:data.users.map(u=>({id:u.id,name:u.name,pin:u.pin}))});
+    data.syncQueue=[]; save();
+    setCloudMsg("ok",`✅ 記録${items.length}件・スタッフ${data.users.length}名を送信しました`);
+  }catch(e){ setCloudMsg("error","送信失敗: "+e.message); }
+}
+async function cloudPullUsers(){
+  if(!cloudEnabled()){ setCloudMsg("error","URLを入力して保存してください"); return; }
+  const pin=prompt("管理者PIN（GASスクリプトの ADMIN_PIN）を入力してください");
+  if(!pin) return;
+  setCloudMsg("","取得中…");
+  try{
+    const j=await cloudGet({action:"users", pin:String(pin).trim()});
+    if(!j || !j.ok){ setCloudMsg("error", j && j.error==="PIN" ? "管理者PINが違います" : "取得失敗"); return; }
+    let added=0, updated=0;
+    (j.users||[]).forEach(cu=>{
+      if(!cu || !cu.id) return;
+      const ex=data.users.find(u=>u.id===cu.id);
+      if(ex){ ex.name=cu.name||ex.name; if(cu.pin) ex.pin=String(cu.pin); updated++; }
+      else { data.users.push({id:cu.id, name:cu.name||"", pin:String(cu.pin||"")}); added++; }
+    });
+    save(); renderAdmin(); renderSelect();
+    setCloudMsg("ok",`✅ 新規${added}名を追加・${updated}名を更新しました（記録は消えていません）`);
+  }catch(e){ setCloudMsg("error","取得失敗: "+e.message); }
+}
+
+// ===== DASHBOARD =====
+let dashMonthOffset = 0;   // 0=今月, 1=先月 …
+let adminPinCache = "";
+let dashCloud = null;      // 直近に取得したクラウドデータ
+
+async function verifyDashPin(pin){
+  if(cloudEnabled()){
+    try{
+      const j=await cloudGet({action:"all", pin:pin});
+      if(j && j.ok) return {ok:true, cloud:j};
+      if(j && j.error==="PIN") return {ok:false, error:"PINが違います"};
+      return {ok:false, error:"サーバーエラー"};
+    }catch(e){
+      // 通信できない場合は端末内PINで照合し、この端末のデータだけ表示
+      if(pin===(data.dashPin||"0000")) return {ok:true, cloud:null};
+      return {ok:false, error:"接続できません"};
+    }
+  }
+  if(pin===(data.dashPin||"0000")) return {ok:true, cloud:null};
+  return {ok:false, error:"PINが違います"};
+}
+
+function applyDashData(cloud){
+  dashCloud=cloud||null;
+  const src=document.getElementById("dash-src");
+  src.textContent = dashCloud ? "☁️ 全端末のデータを集計中" : "📱 この端末のデータのみ（クラウド未接続）";
+  renderDashboard();
+}
+
+async function loadDashboard(){
+  const body=document.getElementById("dash-body");
+  body.innerHTML=`<div class="empty-msg">読み込み中…</div>`;
+  let cloud=null;
+  if(cloudEnabled()){
+    await flushQueue();
+    try{
+      const j=await cloudGet({action:"all", pin:adminPinCache});
+      if(j && j.ok) cloud=j;
+    }catch(e){}
+  }
+  applyDashData(cloud);
+}
+
+function parseRecDate(s){
+  const p=String(s||"").replace(/（.+?）/,"").replace(/\(.+?\)/,"").trim().split("/");
+  if(p.length<3) return null;
+  const y=parseInt(p[0],10), m=parseInt(p[1],10), d=parseInt(p[2],10);
+  if(isNaN(y)||isNaN(m)||isNaN(d)) return null;
+  return new Date(y, m-1, d);
+}
+
+// クラウド + この端末のデータをマージ（同じ人・同じ日は端末側を優先）
+function dashRecords(){
+  const map={};
+  if(dashCloud && Array.isArray(dashCloud.records)){
+    dashCloud.records.forEach(r=>{ if(r&&r.date) map[r.userId+"|"+r.date]=r; });
+  }
+  localItems().forEach(r=>{ map[r.userId+"|"+r.date]=r; });
+  return Object.keys(map).map(k=>map[k]);
+}
+function dashKnownUsers(){
+  const names={};
+  data.users.forEach(u=>{ if(u.name) names[u.name.trim()]=true; });
+  if(dashCloud && Array.isArray(dashCloud.users)) dashCloud.users.forEach(u=>{ if(u&&u.name) names[String(u.name).trim()]=true; });
+  return Object.keys(names);
+}
+
+function renderDashboard(){
+  const now=new Date();
+  const base=new Date(now.getFullYear(), now.getMonth()-dashMonthOffset, 1);
+  const y=base.getFullYear(), m=base.getMonth();
+  const label=`${y}年${m+1}月`;
+
+  document.getElementById("dash-nav").innerHTML=`<div class="period-selector">
+    <button class="period-btn" onclick="changeDashMonth(1)">‹</button>
+    <span class="period-label">📆 ${label}</span>
+    <button class="period-btn" onclick="changeDashMonth(-1)" ${dashMonthOffset>0?"":"disabled"} style="opacity:${dashMonthOffset>0?1:.3}">›</button>
+  </div>`;
+
+  const recs=dashRecords().filter(r=>{
+    const d=parseRecDate(r.date);
+    return d && d.getFullYear()===y && d.getMonth()===m;
+  });
+
+  const g={};
+  dashKnownUsers().forEach(n=>{ g[n]={name:n, total:0, days:{}}; });
+  recs.forEach(r=>{
+    const key=String(r.userName||"(名前なし)").trim() || "(名前なし)";
+    if(!g[key]) g[key]={name:key, total:0, days:{}};
+    g[key].total += Number(r.workMs)||0;
+    if(r.clockIn) g[key].days[r.date]=true;
+  });
+
+  const people=Object.keys(g).map(k=>{
+    const p=g[k];
+    const days=Object.keys(p.days).length;
+    return { name:p.name, total:p.total, days, avg: days? Math.floor(p.total/days) : 0 };
+  }).sort((a,b)=>b.total-a.total);
+
+  const grandTotal=people.reduce((a,p)=>a+p.total,0);
+  const grandDays =people.reduce((a,p)=>a+p.days,0);
+  const grandAvg  =grandDays? Math.floor(grandTotal/grandDays) : 0;
+  const active    =people.filter(p=>p.days>0).length;
+  const maxTotal  =people.reduce((a,p)=>Math.max(a,p.total),0);
+
+  let html=`<div class="dash-hero">
+    <div class="dash-hero-lbl">${label} 全員の勤務時間合計</div>
+    <div class="dash-hero-val">${fmtDur0(grandTotal)}</div>
+    <div class="dash-hero-sub">出勤 ${active}名 ／ 延べ ${grandDays}日 ／ 全体の1日平均 ${fmtDur0(grandAvg)}</div>
+  </div>`;
+
+  if(!people.length){
+    html+=`<div class="empty-msg">スタッフが登録されていません</div>`;
+    document.getElementById("dash-body").innerHTML=html;
+    return;
+  }
+
+  people.forEach((p,i)=>{
+    const w = maxTotal? Math.round(p.total/maxTotal*100) : 0;
+    html+=`<div class="summary-card">
+      <div class="summary-header">
+        <span class="summary-period dash-name">
+          <span class="dash-ava">${EMOJIS[i%EMOJIS.length]}</span>${escHtml(p.name)}
+        </span>
+        <span class="summary-total">${fmtDur0(p.total)}</span>
+      </div>
+      <div class="summary-grid">
+        <div class="summary-stat"><div class="summary-stat-val">${p.days}日</div><div class="summary-stat-lbl">出勤日数</div></div>
+        <div class="summary-stat"><div class="summary-stat-val">${fmtDur0(p.total)}</div><div class="summary-stat-lbl">今月の合計</div></div>
+        <div class="summary-stat"><div class="summary-stat-val">${fmtDur0(p.avg)}</div><div class="summary-stat-lbl">1日平均</div></div>
+      </div>
+      <div class="dash-bar"><span style="width:${w}%"></span></div>
+    </div>`;
+  });
+
+  if(!dashCloud && cloudEnabled()){
+    html+=`<div class="hint" style="text-align:center;margin-top:10px;">⚠️ クラウドに接続できませんでした。表示はこの端末のデータのみです。</div>`;
+  }
+  document.getElementById("dash-body").innerHTML=html;
+}
+function changeDashMonth(dir){
+  const next=dashMonthOffset+dir;
+  if(next<0) return;
+  dashMonthOffset=next;
+  renderDashboard();
+}
+
+// ===== EMAIL =====
+function loadEmailConfigUI(){
+  // URLハッシュから設定を復元（Safariで開いた時用）
+  try {
+    const hash = window.location.hash;
+    if(hash && hash.includes("cfg=")) {
+      const encoded = hash.split("cfg=")[1];
+      const cfg = JSON.parse(decodeURIComponent(atob(encoded)));
+      if(cfg && cfg.pubkey) {
+        data.emailConfig = cfg;
+        save();
+        // ハッシュをきれいにする
+        history.replaceState(null, "", window.location.pathname + window.location.search);
+      }
+    }
+  } catch(e) {}
+  const c=data.emailConfig;
+  document.getElementById("cfg-email").value    = c.email||"";
+  document.getElementById("cfg-pubkey").value   = c.pubkey||"";
+  document.getElementById("cfg-service").value  = c.serviceId||"";
+  document.getElementById("cfg-template").value = c.templateId||"";
+}
+function saveEmailConfig(){
+  data.emailConfig={
+    email:    document.getElementById("cfg-email").value.trim(),
+    pubkey:   document.getElementById("cfg-pubkey").value.trim(),
+    serviceId:document.getElementById("cfg-service").value.trim(),
+    templateId:document.getElementById("cfg-template").value.trim(),
+  };
+  save();
+  // URLハッシュにも保存（Safariで開いた時も復元できるように）
+  try {
+    const encoded = btoa(encodeURIComponent(JSON.stringify(data.emailConfig)));
+    window.location.hash = "cfg=" + encoded;
+  } catch(e) {}
+  const msg=document.getElementById("email-msg");
+  msg.className="form-msg ok"; msg.textContent="保存しました！";
+  setTimeout(()=>msg.textContent="",2000);
+}
+function testEmail(){
+  sendNotification("テストユーザー","出勤テスト",fmtTime(new Date()),todayStr(), true);
+}
+function sendNotification(name, action, time, date, isTest=false){
+  const c=data.emailConfig;
+  if(!c.pubkey||!c.serviceId||!c.templateId||!c.email){
+    if(isTest){ const m=document.getElementById("email-msg"); m.className="form-msg error"; m.textContent="メール設定が未完了です"; setTimeout(()=>m.textContent="",3000); }
+    return;
+  }
+  try {
+    emailjs.init({ publicKey: c.pubkey });
+    emailjs.send(c.serviceId, c.templateId, {
+      to_email: c.email,
+      name: name,
+      action: action,
+      time: time,
+      date: date,
+    }).then(()=>{
+      if(isTest){ const m=document.getElementById("email-msg"); m.className="form-msg ok"; m.textContent="テスト送信しました！"; setTimeout(()=>m.textContent="",3000); }
+      else toast("📧 通知メールを送信しました");
+    }).catch((err)=>{
+      console.error("EmailJS error:", err);
+      if(isTest){ const m=document.getElementById("email-msg"); m.className="form-msg error"; m.textContent="送信失敗: "+JSON.stringify(err); setTimeout(()=>m.textContent="",5000); }
+    });
+  } catch(e) {
+    console.error("EmailJS init error:", e);
+    if(isTest){ const m=document.getElementById("email-msg"); m.className="form-msg error"; m.textContent="初期化エラー: "+e.message; setTimeout(()=>m.textContent="",5000); }
+  }
+}
+
+// ===== CLOCK RENDER =====
+function getUserRecords(){ return data.records[currentUser.id]||[]; }
+function getTodayRecord(){ return getUserRecords().find(r=>r.date===todayStr()); }
+function getStatus(){ return getTodayRecord()?.status||"idle"; }
+
+function renderClock(){
+  document.getElementById("clock-username").textContent=currentUser.name;
+  const status=getStatus(), scfg=STATUS_CONFIG[status];
+  document.getElementById("status-dot").style.cssText=`background:${scfg.color};box-shadow:0 0 8px ${scfg.color}`;
+  document.getElementById("status-text").textContent=scfg.label;
+  document.getElementById("status-text").style.color=scfg.color;
+  document.getElementById("status-badge").style.cssText=`background:${scfg.bg};border:1px solid ${scfg.border};margin-top:12px;display:inline-flex;align-items:center;gap:8px;padding:5px 14px;border-radius:20px;`;
+  Object.keys(BTNS_CFG).forEach(id=>{
+    const btn=document.getElementById("btn-"+id), bc=BTNS_CFG[id], en=bc.allowedFrom.includes(status);
+    btn.disabled=!en;
+    btn.style.cssText=`background:${en?bc.bg:"rgba(255,255,255,.02)"};border:1px solid ${en?bc.border:"rgba(255,255,255,.05)"};color:${en?bc.color:"#2d3748"};cursor:${en?"pointer":"not-allowed"};opacity:${en?1:.4};padding:16px 12px;border-radius:16px;font-size:14px;font-weight:700;display:flex;flex-direction:column;align-items:center;gap:5px;transition:all .15s;font-family:inherit;`;
+  });
+  // 退勤後の再出勤を強調するためボタン文言を切り替え
+  const btnIn = document.getElementById("btn-clockIn");
+  if(btnIn){
+    const label = (status==="done") ? "再出勤" : "出勤";
+    btnIn.innerHTML = `<span class="icon">🟢</span>${label}`;
+  }
+  const rec=getTodayRecord(), card=document.getElementById("today-card");
+  if(rec && rec.sessions && rec.sessions.length){
+    card.style.display="block";
+    const row=(l,v,hl)=>`<div class="irow"><span class="irow-label">${l}</span><span class="irow-value${hl?" hl":v?"":" empty"}">${v||"--:--:--"}</span></div>`;
+    let html="";
+    const multi = rec.sessions.length>1;
+    rec.sessions.forEach((s,si)=>{
+      if(multi){
+        html+=`<div style="font-size:11px;color:var(--muted);font-weight:700;margin:${si===0?"0":"8px"} 0 4px;letter-spacing:.05em;">セッション${si+1}</div>`;
+      }
+      html+=row("出勤", s.clockIn);
+      (s.breaks||[]).forEach((b,i)=>{
+        const lbl=(s.breaks.length>1)?(i+1):"";
+        html+=row(`休憩${lbl}イン`, b.in)+row(`休憩${lbl}アウト`, b.out);
+      });
+      html+=row("退勤", s.clockOut);
+    });
+    const wt=calcWorkTime(rec);
+    if(wt!==null) html+=`<div class="divider"></div>`+row("実労働時間", fmtDuration(wt), true);
+    document.getElementById("today-rows").innerHTML=html;
+  } else { card.style.display="none"; }
+  if(currentTab==="シート") renderSheetView();
+}
+
+function switchTab(tab){
+  currentTab=tab; sheetPeriodOffset=0;
+  ["打刻","シート"].forEach(t=>{
+    document.getElementById("tab-content-"+t).style.display=t===tab?"block":"none";
+    document.getElementById("tab-"+t).className="tab-btn "+(t===tab?"active":"inactive");
+  });
+  if(tab==="シート") renderSheetView();
+}
+
+// ===== SHEET =====
+let currentSheetType="日";
+function switchSheet(type){
+  currentSheetType=type; sheetPeriodOffset=0;
+  ["日","週","月"].forEach(t=>{
+    document.getElementById("snav-"+t).className="snav-btn "+(t===type?"active":"inactive");
+  });
+  renderSheetView();
+}
+
+function renderSheetView(){
+  const body=document.getElementById("sheet-body");
+  if(currentSheetType==="日") body.innerHTML=renderDailySheet();
+  else if(currentSheetType==="週") body.innerHTML=renderWeeklySheet();
+  else body.innerHTML=renderMonthlySheet();
+}
+
+function renderDailySheet(){
+  const recs=getUserRecords();
+  let html=`<div class="sheet-top"><span class="sheet-count">全${recs.length}件</span><button class="clear-btn" onclick="clearUserRecords()">🗑 削除</button></div>`;
+  if(!recs.length) return html+`<div class="empty-msg">まだ記録がありません</div>`;
+  html+=[...recs].reverse().map(r=>{
+    migrateRecord(r);
+    const scfg=STATUS_CONFIG[r.status]||STATUS_CONFIG.idle;
+    const sessions=r.sessions||[];
+    const multi=sessions.length>1;
+    let sessionHtml="";
+    sessions.forEach((s,si)=>{
+      let cells=`<div><div class="cell-lbl">出勤</div><div class="cell-val${s.clockIn?"":" empty"}">${s.clockIn||"--:--:--"}</div></div>
+                 <div><div class="cell-lbl">退勤</div><div class="cell-val${s.clockOut?"":" empty"}">${s.clockOut||"--:--:--"}</div></div>`;
+      (s.breaks||[]).forEach((b,i)=>{const lbl=s.breaks.length>1?i+1:"";
+        cells+=`<div><div class="cell-lbl">休憩${lbl}イン</div><div class="cell-val${b.in?"":" empty"}">${b.in||"--:--"}</div></div>
+                <div><div class="cell-lbl">休憩${lbl}アウト</div><div class="cell-val${b.out?"":" empty"}">${b.out||"--:--"}</div></div>`;
+      });
+      if(multi){
+        sessionHtml+=`<div style="font-size:10px;color:var(--muted);font-weight:700;margin:${si===0?"0":"8px"} 0 4px;letter-spacing:.05em;">セッション${si+1}</div>`;
+      }
+      sessionHtml+=`<div class="cell-grid">${cells}</div>`;
+    });
+    if(!sessions.length){
+      sessionHtml=`<div class="cell-grid">
+        <div><div class="cell-lbl">出勤</div><div class="cell-val empty">--:--:--</div></div>
+        <div><div class="cell-lbl">退勤</div><div class="cell-val empty">--:--:--</div></div>
+      </div>`;
+    }
+    const wt=calcWorkTime(r);
+    return `<div class="record-card">
+      <div class="rec-header">
+        <span class="rec-date">${r.date}</span>
+        <span class="rec-status" style="background:${scfg.bg};color:${scfg.color};border:1px solid ${scfg.border}">${scfg.label}</span>
+      </div>
+      ${sessionHtml}
+      ${wt?`<div class="wt-row"><span class="wt-label">実労働時間</span><span class="wt-val">${fmtDuration(wt)}</span></div>`:""}
+    </div>`;
+  }).join("");
+  return html;
+}
+
+function getWeekKey(dateStr){
+  // dateStr は ja-JP形式 "2025/05/03（土）"
+  // Dateに変換してその週の月曜日を返す
+  const parts=dateStr.replace(/（.+?）/,"").split("/");
+  if(parts.length<3) return dateStr;
+  const d=new Date(parseInt(parts[0]),parseInt(parts[1])-1,parseInt(parts[2]));
+  const day=d.getDay(), diff=(day===0?-6:1-day);
+  const mon=new Date(d); mon.setDate(d.getDate()+diff);
+  return mon.toLocaleDateString("ja-JP",{year:"numeric",month:"2-digit",day:"2-digit"});
+}
+function getMonthKey(dateStr){
+  const parts=dateStr.replace(/（.+?）/,"").split("/");
+  if(parts.length<2) return dateStr;
+  return parts[0]+"/"+parts[1];
+}
+
+function renderWeeklySheet(){
+  const recs=getUserRecords();
+  if(!recs.length) return `<div class="empty-msg">まだ記録がありません</div>`;
+
+  // 週ごとにグループ化
+  const weeks={};
+  recs.forEach(r=>{ const k=getWeekKey(r.date); if(!weeks[k]) weeks[k]=[]; weeks[k].push(r); });
+  const sortedKeys=Object.keys(weeks).sort().reverse();
+
+  // offset
+  const offset=sheetPeriodOffset;
+  const idx=Math.max(0,Math.min(offset, sortedKeys.length-1));
+  const key=sortedKeys[idx];
+  const weekRecs=weeks[key];
+
+  // 週の月〜日
+  const parts=key.split("/");
+  const mon=new Date(parseInt(parts[0]),parseInt(parts[1])-1,parseInt(parts[2]));
+  const sun=new Date(mon); sun.setDate(mon.getDate()+6);
+  const periodLabel=`${mon.toLocaleDateString("ja-JP",{month:"2-digit",day:"2-digit"})} 〜 ${sun.toLocaleDateString("ja-JP",{month:"2-digit",day:"2-digit"})}`;
+
+  weekRecs.forEach(migrateRecord);
+  const totalMs=weekRecs.reduce((a,r)=>a+(calcWorkTime(r)||0),0);
+  const days=weekRecs.filter(r=>firstClockIn(r)).length;
+  const avgMs=days?Math.floor(totalMs/days):0;
+
+  let html=navBar(periodLabel, sortedKeys.length, idx);
+  html+=`<div class="summary-card">
+    <div class="summary-header">
+      <span class="summary-period">📅 ${periodLabel}</span>
+      <span class="summary-total">${fmtDuration(totalMs)}</span>
+    </div>
+    <div class="summary-grid">
+      <div class="summary-stat"><div class="summary-stat-val">${days}日</div><div class="summary-stat-lbl">出勤日数</div></div>
+      <div class="summary-stat"><div class="summary-stat-val">${fmtDuration(totalMs)}</div><div class="summary-stat-lbl">合計時間</div></div>
+      <div class="summary-stat"><div class="summary-stat-val">${fmtDuration(avgMs)}</div><div class="summary-stat-lbl">平均/日</div></div>
+    </div>`;
+  [...weekRecs].reverse().forEach(r=>{
+    const wt=calcWorkTime(r);
+    const ci=firstClockIn(r), co=lastClockOut(r);
+    const multi=(r.sessions||[]).length>1?` (${r.sessions.length}回)`:"";
+    html+=`<div class="day-row">
+      <span class="day-row-date">${r.date.replace(/\d{4}\//,"")}</span>
+      <span class="day-row-times">${ci||"--"}→${co||"--"}${multi}</span>
+      <span class="day-row-wt">${wt?fmtDuration(wt):"--"}</span>
+    </div>`;
+  });
+  html+=`</div>`;
+  return html;
+}
+
+function renderMonthlySheet(){
+  const recs=getUserRecords();
+  if(!recs.length) return `<div class="empty-msg">まだ記録がありません</div>`;
+
+  const months={};
+  recs.forEach(r=>{ const k=getMonthKey(r.date); if(!months[k]) months[k]=[]; months[k].push(r); });
+  const sortedKeys=Object.keys(months).sort().reverse();
+
+  const offset=sheetPeriodOffset;
+  const idx=Math.max(0,Math.min(offset,sortedKeys.length-1));
+  const key=sortedKeys[idx];
+  const monthRecs=months[key];
+  const [y,m]=key.split("/");
+  const periodLabel=`${y}年${m}月`;
+
+  monthRecs.forEach(migrateRecord);
+  const totalMs=monthRecs.reduce((a,r)=>a+(calcWorkTime(r)||0),0);
+  const days=monthRecs.filter(r=>firstClockIn(r)).length;
+  const avgMs=days?Math.floor(totalMs/days):0;
+
+  let html=navBar(periodLabel, sortedKeys.length, idx);
+  html+=`<div class="summary-card">
+    <div class="summary-header">
+      <span class="summary-period">📆 ${periodLabel}</span>
+      <span class="summary-total">${fmtDuration(totalMs)}</span>
+    </div>
+    <div class="summary-grid">
+      <div class="summary-stat"><div class="summary-stat-val">${days}日</div><div class="summary-stat-lbl">出勤日数</div></div>
+      <div class="summary-stat"><div class="summary-stat-val">${fmtDuration(totalMs)}</div><div class="summary-stat-lbl">合計時間</div></div>
+      <div class="summary-stat"><div class="summary-stat-val">${fmtDuration(avgMs)}</div><div class="summary-stat-lbl">平均/日</div></div>
+    </div>`;
+  [...monthRecs].reverse().forEach(r=>{
+    const wt=calcWorkTime(r);
+    const ci=firstClockIn(r), co=lastClockOut(r);
+    const multi=(r.sessions||[]).length>1?` (${r.sessions.length}回)`:"";
+    html+=`<div class="day-row">
+      <span class="day-row-date">${r.date.replace(/\d{4}\//,"")}</span>
+      <span class="day-row-times">${ci||"--"}→${co||"--"}${multi}</span>
+      <span class="day-row-wt">${wt?fmtDuration(wt):"--"}</span>
+    </div>`;
+  });
+  html+=`</div>`;
+  return html;
+}
+
+function navBar(label, total, idx){
+  const canPrev=idx<total-1, canNext=idx>0;
+  return `<div class="period-selector">
+    <button class="period-btn" onclick="changePeriod(1)" ${canPrev?"":"disabled"} style="opacity:${canPrev?1:.3}">‹</button>
+    <span class="period-label">${label}</span>
+    <button class="period-btn" onclick="changePeriod(-1)" ${canNext?"":"disabled"} style="opacity:${canNext?1:.3}">›</button>
+  </div>`;
+}
+function changePeriod(dir){ sheetPeriodOffset+=dir; renderSheetView(); }
+
+function clearUserRecords(){
+  if(confirm(currentUser.name+"さんの全記録を削除しますか？")){
+    data.records[currentUser.id]=[]; save(); renderClock();
+  }
+}
+
+// ===== ADMIN =====
+function renderAdmin(){
+  const list=document.getElementById("admin-user-list");
+  if(!data.users.length){ list.innerHTML='<div style="color:#475569;font-size:12px;padding:6px 0;">スタッフがいません</div>'; return; }
+  list.innerHTML=data.users.map((u,i)=>`
+    <div class="admin-user-row">
+      <div class="admin-user-info">
+        <div class="admin-avatar">${EMOJIS[i%EMOJIS.length]}</div>
+        <div><div class="admin-user-name">${escHtml(u.name)}</div><div class="admin-user-pin">PIN: ${escHtml(u.pin)}</div></div>
+      </div>
+      <button class="del-user-btn" onclick="deleteUser('${u.id}')">削除</button>
+    </div>`).join("");
+}
+function addUser(){
+  const name=document.getElementById("new-name").value.trim();
+  const pin=String(document.getElementById("new-pin").value).trim();
+  const msg=document.getElementById("form-msg");
+  if(!name){ msg.className="form-msg error"; msg.textContent="名前を入力してください"; return; }
+  if(!/^\d{4}$/.test(pin)){ msg.className="form-msg error"; msg.textContent="4桁の数字を入力してください"; return; }
+  if(data.users.find(u=>u.pin===pin)){ msg.className="form-msg error"; msg.textContent="このPINはすでに使われています"; return; }
+  data.users.push({id:"u_"+Date.now(), name, pin});
+  save();
+  syncUsers();
+  document.getElementById("new-name").value="";
+  document.getElementById("new-pin").value="";
+  msg.className="form-msg ok"; msg.textContent=name+" さんを追加しました！";
+  setTimeout(()=>msg.textContent="",2000);
+  renderAdmin();
+}
+function deleteUser(uid){
+  const u=data.users.find(u=>u.id===uid);
+  if(!u||!confirm(u.name+" さんを削除しますか？記録も削除されます。")) return;
+  data.users=data.users.filter(u=>u.id!==uid);
+  delete data.records[uid];
+  save(); renderAdmin();
+  if(cloudEnabled()){ cloudPost({action:"deleteUser", id:uid}).catch(()=>{}); }
+}
+
+// ===== TICK =====
+function tick(){
+  const now=new Date();
+  const dl=document.getElementById("date-label");
+  const ct=document.getElementById("clock-time");
+  if(dl) dl.textContent=fmtDate(now);
+  if(ct) ct.textContent=fmtTime(now);
+}
+
+renderSelect(); tick(); setInterval(tick,1000);
+flushQueue();
+window.addEventListener("online", flushQueue);
+</script>
+</body>
+</html>
